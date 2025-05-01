@@ -1,144 +1,140 @@
 import sys
-import os
 from PyQt5 import QtWidgets, QtCore
-import subprocess
 import cv2
+import subprocess
 
 class AudioMergerGUI(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("180Kino Audio Merger")
+        self.setWindowTitle("easyVR180AudioSync")
         self.init_ui()
 
     def init_ui(self):
         central = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(central)
+        main_layout = QtWidgets.QVBoxLayout(central)
 
-        form = QtWidgets.QFormLayout()
-        self.left_path = QtWidgets.QLineEdit(); btn = QtWidgets.QPushButton("Load Left Video")
-        btn.clicked.connect(lambda: self.load_video(self.left_path, self.left_start, self.left_end))
-        form.addRow(btn, self.left_path)
+        # Top: Left and Right video controls
+        top_layout = QtWidgets.QHBoxLayout()
 
+        # Left video group
+        left_group = QtWidgets.QGroupBox("Left Video")
+        left_layout = QtWidgets.QFormLayout(left_group)
+        self.left_path = QtWidgets.QLineEdit("/video_L.MP4")
+        btn_left = QtWidgets.QPushButton("Load Left Video")
+        btn_left.clicked.connect(lambda: self.load_video(self.left_path, "left"))
+        left_layout.addRow(btn_left, self.left_path)
         self.left_start = QtWidgets.QSpinBox(); self.left_end = QtWidgets.QSpinBox()
-        self.left_end_checkbox = QtWidgets.QCheckBox("Until end")
-        self.left_end_checkbox.setChecked(True)
-        self.left_end_checkbox.stateChanged.connect(self.toggle_left_end)
-        h1 = QtWidgets.QHBoxLayout(); h1.addWidget(QtWidgets.QLabel("Start frame:")); h1.addWidget(self.left_start);
-        h1.addWidget(QtWidgets.QLabel("End frame:")); h1.addWidget(self.left_end); h1.addWidget(self.left_end_checkbox)
-        form.addRow(h1)
+        self.left_end.setEnabled(False)
+        chk_left = QtWidgets.QCheckBox("Until end"); chk_left.setChecked(True)
+        chk_left.toggled.connect(lambda s: self.left_end.setEnabled(not s))
+        left_layout.addRow("Start frame:", self.left_start)
+        left_layout.addRow("End frame:", self.left_end)
+        left_layout.addRow(chk_left)
+        top_layout.addWidget(left_group)
 
-        self.right_path = QtWidgets.QLineEdit(); btn2 = QtWidgets.QPushButton("Load Right Video")
-        btn2.clicked.connect(lambda: self.load_video(self.right_path, self.right_start, self.right_end))
-        form.addRow(btn2, self.right_path)
-
+        # Right video group
+        right_group = QtWidgets.QGroupBox("Right Video")
+        right_layout = QtWidgets.QFormLayout(right_group)
+        self.right_path = QtWidgets.QLineEdit("/video_R.MP4")
+        btn_right = QtWidgets.QPushButton("Load Right Video")
+        btn_right.clicked.connect(lambda: self.load_video(self.right_path, "right"))
+        right_layout.addRow(btn_right, self.right_path)
         self.right_start = QtWidgets.QSpinBox(); self.right_end = QtWidgets.QSpinBox()
-        self.right_end_checkbox = QtWidgets.QCheckBox("Until end")
-        self.right_end_checkbox.setChecked(True)
-        self.right_end_checkbox.stateChanged.connect(self.toggle_right_end)
-        h2 = QtWidgets.QHBoxLayout(); h2.addWidget(QtWidgets.QLabel("Start frame:")); h2.addWidget(self.right_start);
-        h2.addWidget(QtWidgets.QLabel("End frame:")); h2.addWidget(self.right_end); h2.addWidget(self.right_end_checkbox)
-        form.addRow(h2)
+        self.right_end.setEnabled(False)
+        chk_right = QtWidgets.QCheckBox("Until end"); chk_right.setChecked(True)
+        chk_right.toggled.connect(lambda s: self.right_end.setEnabled(not s))
+        right_layout.addRow("Start frame:", self.right_start)
+        right_layout.addRow("End frame:", self.right_end)
+        right_layout.addRow(chk_right)
+        top_layout.addWidget(right_group)
 
-        self.target_path = QtWidgets.QLineEdit(); btn3 = QtWidgets.QPushButton("Load Target Video")
-        btn3.clicked.connect(lambda: self.load_target(self.target_path))
-        form.addRow(btn3, self.target_path)
+        main_layout.addLayout(top_layout)
 
-        layout.addLayout(form)
+        # Target video group
+        target_group = QtWidgets.QGroupBox("Target Video (VR180 output)")
+        target_layout = QtWidgets.QHBoxLayout(target_group)
+        self.target_path = QtWidgets.QLineEdit("/target_LR.MP4")
+        btn_target = QtWidgets.QPushButton("Load Target Video")
+        btn_target.clicked.connect(lambda: self.load_file(self.target_path, "Videos (*.mp4)", "Load Target Video"))
+        target_layout.addWidget(btn_target); target_layout.addWidget(self.target_path)
+        main_layout.addWidget(target_group)
 
-        # mode selection
-        mode_grp = QtWidgets.QGroupBox("Mode")
-        mode_layout = QtWidgets.QVBoxLayout(mode_grp)
+        # Mode selection
+        mode_group = QtWidgets.QGroupBox("Mode")
+        mode_layout = QtWidgets.QVBoxLayout(mode_group)
         self.mode_left = QtWidgets.QRadioButton("Use stereo audio from left video")
         self.mode_right = QtWidgets.QRadioButton("Use stereo audio from right video")
         self.mode_mix = QtWidgets.QRadioButton("Mix monos from left+right into stereo")
         self.mode_left.setChecked(True)
-        mode_layout.addWidget(self.mode_left)
-        mode_layout.addWidget(self.mode_right)
-        mode_layout.addWidget(self.mode_mix)
-        layout.addWidget(mode_grp)
+        for w in (self.mode_left, self.mode_right, self.mode_mix):
+            w.toggled.connect(self.update_output_filename)
+            mode_layout.addWidget(w)
+        main_layout.addWidget(mode_group)
 
-        out_layout = QtWidgets.QHBoxLayout()
+        # Output file
+        out_group = QtWidgets.QGroupBox("Output File")
+        out_layout = QtWidgets.QHBoxLayout(out_group)
         self.out_path = QtWidgets.QLineEdit()
         btn_out = QtWidgets.QPushButton("Save As...")
-        btn_out.clicked.connect(self.save_output)
-        out_layout.addWidget(self.out_path); out_layout.addWidget(btn_out)
-        layout.addLayout(out_layout)
+        btn_out.clicked.connect(lambda: self.load_file(self.out_path, "MP4 Video (*.mp4)", "Save Output Video"))
+        out_layout.addWidget(btn_out); out_layout.addWidget(self.out_path)
+        main_layout.addWidget(out_group)
 
+        # Update default output
+        self.update_output_filename()
+
+        # Merge button and progress
         self.btn_merge = QtWidgets.QPushButton("Merge Audio")
         self.btn_merge.clicked.connect(self.merge_audio)
-        layout.addWidget(self.btn_merge)
-
         self.progress = QtWidgets.QProgressBar()
-        layout.addWidget(self.progress)
+        main_layout.addWidget(self.btn_merge)
+        main_layout.addWidget(self.progress)
 
         self.setCentralWidget(central)
 
-    def load_video(self, lineedit, start_sb, end_sb):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Load Video", filter="Videos (*.mp4 *.mov *.mkv)")
+    def load_video(self, lineedit, side):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, f"Load {side.capitalize()} Video", filter="Videos (*.mp4 *.mov *.mkv)")
         if path:
             lineedit.setText(path)
             cap = cv2.VideoCapture(path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cap.release()
-            start_sb.setRange(0, frames-1)
-            end_sb.setRange(0, frames-1)
-            start_sb.setValue(0)
-            end_sb.setValue(frames)
-            if lineedit is self.left_path:
-                self.left_fps = fps; self.left_frames = frames
-            else:
-                self.right_fps = fps; self.right_frames = frames
+            sb = getattr(self, f"{side}_start"); eb = getattr(self, f"{side}_end"); chk = eb.isEnabled()
+            sb.setRange(0, frames-1); eb.setRange(0, frames-1)
 
-    def toggle_left_end(self, state):
-        self.left_end.setEnabled(not state)
+    def load_file(self, lineedit, filter, title):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, title, filter=filter)
+        if path: lineedit.setText(path)
 
-    def toggle_right_end(self, state):
-        self.right_end.setEnabled(not state)
-
-    def load_target(self, lineedit):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Load Target Video", filter="Videos (*.mp4)")
-        if path:
-            lineedit.setText(path)
-
-    def save_output(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save Output Video", filter="MP4 Video (*.mp4)")
-        if path:
-            self.out_path.setText(path)
+    def update_output_filename(self):
+        tag = 'L' if self.mode_left.isChecked() else 'R' if self.mode_right.isChecked() else 'M'
+        self.out_path.setText(f"output_LR_wAudio{tag}.mp4")
 
     def merge_audio(self):
-        left = self.left_path.text(); right = self.right_path.text(); target = self.target_path.text()
-        out = self.out_path.text()
+        left, right, target, out = self.left_path.text(), self.right_path.text(), self.target_path.text(), self.out_path.text()
         if not all([left, right, target, out]):
-            QtWidgets.QMessageBox.warning(self, "Error", "Please fill all file paths.")
+            QtWidgets.QMessageBox.warning(self, "Error", "Please fill all paths.")
             return
-        ls = self.left_start.value(); le = None if self.left_end_checkbox.isChecked() else self.left_end.value()
-        rs = self.right_start.value(); re = None if self.right_end_checkbox.isChecked() else self.right_end.value()
+        ls, le = self.left_start.value(), None if not self.left_end.isEnabled() else self.left_end.value()
+        rs, re = self.right_start.value(), None if not self.right_end.isEnabled() else self.right_end.value()
+        cmd = ["ffmpeg", "-y"]
         if self.mode_left.isChecked():
-            cmd = ["ffmpeg", "-y"]
-            if ls: cmd += ["-ss", str(ls/self.left_fps)]
-            if le: cmd += ["-to", str(le/self.left_fps)]
+            if ls: cmd += ["-ss", str(ls/self.get_fps(left))]
+            if le: cmd += ["-to", str(le/self.get_fps(left))]
             cmd += ["-i", left, "-i", target, "-map", "1:v", "-map", "0:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", out]
         elif self.mode_right.isChecked():
-            cmd = ["ffmpeg", "-y"]
-            if rs: cmd += ["-ss", str(rs/self.right_fps)]
-            if re: cmd += ["-to", str(re/self.right_fps)]
+            if rs: cmd += ["-ss", str(rs/self.get_fps(right))]
+            if re: cmd += ["-to", str(re/self.get_fps(right))]
             cmd += ["-i", right, "-i", target, "-map", "1:v", "-map", "0:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", out]
         else:
-            complex_filter = (
-                f"[0:a]atrim=start={ls/fps}:end={le/fps if le else ''},asetpts=PTS-STARTPTS[a0];"
-                f"[1:a]atrim=start={rs/self.right_fps}:end={re/self.right_fps if re else ''},asetpts=PTS-STARTPTS[a1];"
-                "[a0][a1]join=inputs=2:channel_layout=stereo[a]"
-            )
-            cmd = ["ffmpeg", "-y"]
-            if ls: cmd += ["-ss", str(ls/self.left_fps)]
-            if le: cmd += ["-to", str(le/self.left_fps)]
+            fps_l = self.get_fps(left); fps_r = self.get_fps(right)
+            filt = (f"[0:a]atrim=start={ls/fps_l}:end={le/fps_l if le else ''},asetpts=PTS-STARTPTS[a0];"
+                    f"[1:a]atrim=start={rs/fps_r}:end={re/fps_r if re else ''},asetpts=PTS-STARTPTS[a1];"
+                    "[a0][a1]join=inputs=2:channel_layout=stereo[a]")
             cmd += ["-i", left]
-            if rs: cmd += ["-ss", str(rs/self.right_fps)]
-            if re: cmd += ["-to", str(re/self.right_fps)]
-            cmd += ["-i", right, "-i", target, "-filter_complex", complex_filter,
-                    "-map", "2:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", out]
-
+            cmd += ["-i", right]
+            cmd += ["-i", target, "-filter_complex", filt, "-map", "2:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", out]
         self.progress.setValue(0)
         self.proc = QtCore.QProcess(self)
         self.proc.setProcessChannelMode(QtCore.QProcess.MergedChannels)
@@ -146,14 +142,19 @@ class AudioMergerGUI(QtWidgets.QMainWindow):
         self.proc.finished.connect(self.finish)
         self.proc.start(cmd[0], cmd[1:])
 
+    def get_fps(self, path):
+        cap = cv2.VideoCapture(path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        cap.release()
+        return fps
+
     def handle_progress(self):
         text = bytes(self.proc.readAllStandardOutput()).decode()
         for line in text.splitlines():
             if line.startswith('out_time_ms='):
                 ot = int(line.split('=')[1])
-                # estimate percent (assume left duration)
-                total = int(self.left_frames / self.left_fps * 1000)
-                pct = int(ot / total * 100)
+                total = int(self.get_fps(self.left_path.text()) * (self.left_end.value() or 0) * 1000)
+                pct = int(ot / total * 100) if total else 0
                 self.progress.setValue(min(pct, 100))
 
     def finish(self, exitCode, exitStatus):
