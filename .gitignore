@@ -172,3 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+#ignore input/output dirs for video files
+input/
+output/
